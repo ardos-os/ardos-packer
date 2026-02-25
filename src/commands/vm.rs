@@ -1,5 +1,5 @@
 // src/vm.rs
-//! Hyprpacker - vm run
+//! Ardos Packer - vm run
 //! - system.qcow2 hardcoded em build/vm/system.qcow2
 //! - user disk path passado nas opções (criado por vm reset)
 //! - usa run_privileged_script() para operações que exigem root (uma única elevação)
@@ -95,7 +95,7 @@ fn run_with_tool(tool: &str, args: &[&str]) -> io::Result<ExitStatus> {
 
 /// Agrupa vários comandos num único script e executa-o com privilégio (uma só elevação).
 pub fn run_privileged_script(commands: &[&str]) -> io::Result<ExitStatus> {
-	let tmp_path = std::env::temp_dir().join("hyprpacker-vm-setup.sh");
+	let tmp_path = std::env::temp_dir().join("ardos-packer-vm-setup.sh");
 	{
 		let mut file = File::create(&tmp_path)?;
 		writeln!(file, "#!/usr/bin/env bash")?;
@@ -147,8 +147,8 @@ pub fn run_command(opts: RunCommandOptions) -> Result<(), RunCommandError> {
 			"set -xe",
 			"qemu-nbd --disconnect /dev/nbd0 || true",
 			"qemu-nbd --disconnect /dev/nbd1 || true",
-			"umount /mnt/hyprside-user || true",
-			"umount /mnt/hyprside-vm || true",
+			"umount /mnt/ardos-user || true",
+			"umount /mnt/ardos-vm || true",
 			"modprobe -r nbd || true",
 			"sleep 0.1s",
 			"modprobe nbd",
@@ -164,35 +164,35 @@ pub fn run_command(opts: RunCommandOptions) -> Result<(), RunCommandError> {
 			"sleep 0.1s",
 			"mkfs.vfat -F32 /dev/nbd0p1",
 			"mkfs.btrfs -f /dev/nbd0p2",
-			"mkdir -p /mnt/hyprside-vm",
-			"mount /dev/nbd0p1 /mnt/hyprside-vm",
-			"mkdir -p /mnt/hyprside-vm/EFI/BOOT",
+			"mkdir -p /mnt/ardos-vm",
+			"mount /dev/nbd0p1 /mnt/ardos-vm",
+			"mkdir -p /mnt/ardos-vm/EFI/BOOT",
 			&format!(
-				"cp {} /mnt/hyprside-vm/EFI/BOOT/BOOTX64.EFI",
+				"cp {} /mnt/ardos-vm/EFI/BOOT/BOOTX64.EFI",
 				opts.bootloader_path.display()
 			),
-			&format!("cp {} /mnt/hyprside-vm/vmlinuz", opts.kernel_path.display()),
+			&format!("cp {} /mnt/ardos-vm/vmlinuz", opts.kernel_path.display()),
 			&format!(
-				"cp {} /mnt/hyprside-vm/initramfs.img",
+				"cp {} /mnt/ardos-vm/initramfs.img",
 				opts.initrd_path.display()
 			),
 			"SYSTEM_PARTITION=$(blkid -s PARTUUID -o value /dev/nbd0p2)",
 			"USER_PARTITION=$(blkid -s PARTUUID -o value /dev/nbd1p1 || true)",
-			"cat > /mnt/hyprside-vm/limine.conf <<EOF
+			"cat > /mnt/ardos-vm/limine.conf <<EOF
 timeout: 0
-/Hyprside
+/Ardos
     protocol: linux
     path: boot():/vmlinuz
     cmdline: console=ttyS0 system_partition=UUID=$SYSTEM_PARTITION user_partition=UUID=$USER_PARTITION
     module_path: boot():/initramfs.img
 EOF",
-			"umount /mnt/hyprside-vm || true",
-			"mount /dev/nbd0p2 /mnt/hyprside-vm",
+			"umount /mnt/ardos-vm || true",
+			"mount /dev/nbd0p2 /mnt/ardos-vm",
 			&format!(
-				"cp {} /mnt/hyprside-vm/system.squashfs",
+				"cp {} /mnt/ardos-vm/system.squashfs",
 				opts.image_path.display()
 			),
-			"umount /mnt/hyprside-vm || true",
+			"umount /mnt/ardos-vm || true",
 			"qemu-nbd --disconnect /dev/nbd0 || true",
 			"qemu-nbd --disconnect /dev/nbd1 || true",
 			"sleep 0.2s"
@@ -205,7 +205,7 @@ EOF",
 		eprintln!(
 			"{} {}",
 			" Missing user disk".yellow().bold(),
-			"(run `hyprpacker vm reset` first)".dimmed()
+			"(run `ardos-packer vm reset` first)".dimmed()
 		);
 		return Err(RunCommandError::MissingFile(format!(
 			"{} missing",
@@ -300,16 +300,16 @@ pub fn reset_vm() -> Result<PathBuf, RunCommandError> {
 		"parted -s /dev/nbd1 mkpart USER btrfs 1MiB 100%",
 		"sleep 0.1s",
 		"mkfs.btrfs -f /dev/nbd1p1",
-		"mkdir -p /mnt/hyprside-user",
-		"mount /dev/nbd1p1 /mnt/hyprside-user",
+		"mkdir -p /mnt/ardos-user",
+		"mount /dev/nbd1p1 /mnt/ardos-user",
 		// subvolumes principais
-		"btrfs subvolume create /mnt/hyprside-user/@home",
-		"btrfs subvolume create /mnt/hyprside-user/@var",
-		"btrfs subvolume create /mnt/hyprside-user/@config",
-		"btrfs subvolume create /mnt/hyprside-user/@cache",
-		"btrfs subvolume create /mnt/hyprside-user/@data",
+		"btrfs subvolume create /mnt/ardos-user/@home",
+		"btrfs subvolume create /mnt/ardos-user/@var",
+		"btrfs subvolume create /mnt/ardos-user/@config",
+		"btrfs subvolume create /mnt/ardos-user/@cache",
+		"btrfs subvolume create /mnt/ardos-user/@data",
 		// desmontar e limpar
-		"umount /mnt/hyprside-user",
+		"umount /mnt/ardos-user",
 		"qemu-nbd --disconnect /dev/nbd1",
 	];
 

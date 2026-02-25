@@ -1,15 +1,15 @@
-#:schema ./hyprpacker-schema.json
+#:schema ./ardos-packer-schema.json
 # ========================================================
-# Hyprpacker Manifest Tutorial (Detailed Explanation)
+# Ardos Packer Manifest Tutorial (Detailed Explanation)
 # ========================================================
-# This manifest demonstrates how to define packages for Hyprpacker.
+# This manifest demonstrates how to define packages for Ardos Packer.
 # Each field is explained so users understand its purpose.
 #
 # General notes:
 # - version: the manifest version, useful for tracking changes in your config.
 # - packages: list of packages to build/fetch.
-# - SHA256 hash is optional. If omitted, Hyprpacker automatically sets a fake
-#   hash of 64 'A's. After building, copy the actual hash printed by Hyprpacker.
+# - SHA256 hash is optional. If omitted, Ardos Packer automatically sets a fake
+#   hash of 64 'A's. After building, copy the actual hash printed by Ardos Packer.
 # - Docker settings are optional. Default image_name = "archlinux:multilib-devel".
 # ========================================================
 
@@ -40,7 +40,7 @@ ANOTHER_FEATURE = "n"
 # ========================================================
 # 1. Binary package example
 # ========================================================
-# Binary packages are precompiled packages that Hyprpacker can download directly.
+# Binary packages are precompiled packages that Ardos Packer can download directly.
 # Use these for packages that do not need to be rebuilt from source.
 [[package]]
 name = "helloworld"           # The unique name of the package
@@ -109,7 +109,7 @@ sha256 = "0000000000000000000000000000000000000000000000000000000000000000"  # S
 # ========================================================
 # 5. Local PKGBUILD without package selection (builds all except debug)
 # ========================================================
-# If pick_packages_from_group is omitted, Hyprpacker builds all packages defined in the PKGBUILD.
+# If pick_packages_from_group is omitted, Ardos Packer builds all packages defined in the PKGBUILD.
 # Debug packages are excluded automatically.
 [[package]]
 name = "glibc"

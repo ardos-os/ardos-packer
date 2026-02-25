@@ -415,7 +415,7 @@ impl Package {
 			DockerSettings::DockerfilePath {
 				path: dockerfile_path,
 			} => {
-				format!("hyprpacker-{}", hash_file(dockerfile_path)?)
+				format!("ardos-packer-{}", hash_file(dockerfile_path)?)
 			}
 			DockerSettings::ImageName { name } => name.clone(),
 		})

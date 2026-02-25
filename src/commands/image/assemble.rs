@@ -51,7 +51,7 @@ pub fn assemble<'m>(manifest: &'m Manifest) -> Result<PathBuf, AssembleError<'m>
 	let sysroot_folder = PathBuf::from("build/sysroot");
 	std::fs::remove_dir_all(&sysroot_folder).ok();
 	let image_file_name = format!(
-		"hyprside-{}-{}.squashfs",
+		"ardos-{}-{}.squashfs",
 		manifest.version,
 		get_git_commit_hash().unwrap_or(String::from("unknown"))
 	);

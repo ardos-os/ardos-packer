@@ -12,7 +12,7 @@ use crate::{
     hash::hash_file, manifest::{KernelOptionValue, Manifest}, prefix_commands
 };
 
-const KERNEL_IMAGE_NAME: &str = "hyprpacker-kernel-builder:latest";
+const KERNEL_IMAGE_NAME: &str = "ardos-packer-kernel-builder:latest";
 const KERNEL_DOCKERFILE_CONTENT: &str = include_str!("../../../docker/kernel.Dockerfile");
 const BUILD_SCRIPT: &str = r##"set -euo pipefail
 

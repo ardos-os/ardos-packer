@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ========================================
-# Hyprside Kernel Build Script
+# Ardos OS Kernel Build Script
 # ========================================
 # Compila um kernel "headless" (sem TTYs visuais),
 # com saída via serial e suporte a EFI / virtio.
@@ -30,9 +30,9 @@ echo "==> Gerando config base..."
 make x86_64_defconfig
 
 # ----------------------------------------
-# 3️⃣ Aplicar opções Hyprside
+# 3️⃣ Aplicar opções Ardos OS
 # ----------------------------------------
-echo "==> Aplicando flags Hyprside..."
+echo "==> Aplicando flags Ardos OS..."
 scripts/config \
   --disable VT \
   --disable VT_CONSOLE \
@@ -88,7 +88,7 @@ echo "  Saída: $BUILD_DIR/kernel.efi"
 echo
 echo "Para testar no QEMU:"
 echo "  qemu-system-x86_64 -enable-kvm -m 2G -bios /usr/share/OVMF/OVMF.fd \\"
-echo "     -serial mon:stdio -drive file=build/hyprside.qcow2,format=qcow2"
+echo "     -serial mon:stdio -drive file=build/ardos.qcow2,format=qcow2"
 echo
 echo "Para bootar com Limine:"
 echo "  CMDLINE=console=ttyS0,115200n8 earlyprintk=serial,ttyS0 quiet loglevel=3 panic=10"

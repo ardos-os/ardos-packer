@@ -1,7 +1,7 @@
 
-# Hyprpacker
+# Ardos Packer
 
-**Hyprpacker** is the official build system of the **Hyprside** operating system.
+**Ardos Packer** is the official build system of the **Ardos OS** operating system.
 It compiles the kernel, assembles the immutable system image, builds the initramfs, and can boot the OS inside a QEMU VM for testing — all through a unified CLI.
 
 ---
@@ -24,7 +24,7 @@ It compiles the kernel, assembles the immutable system image, builds the initram
 ## 🧭 Command Structure
 
 ```bash
-hyprpacker <command> [subcommand] [options]
+ardos-packer <command> [subcommand] [options]
 ```
 
 | Main Command | Description                              |
@@ -112,28 +112,28 @@ source = { type = "pkgbuild", path = "./pkgs/tibs" }
 
 ```bash
 # Download all sources
-hyprpacker image packages fetch
+ardos-packer image packages fetch
 
 # Build packages only
-hyprpacker image packages build
+ardos-packer image packages build
 
 # Assemble the final system image
-hyprpacker image assemble
+ardos-packer image assemble
 
 # Build the kernel
-hyprpacker kernel build
+ardos-packer kernel build
 
 # Build the initramfs
-hyprpacker initrd build
+ardos-packer initrd build
 
 # Run the full system inside a UEFI QEMU VM
-hyprpacker vm run
+ardos-packer vm run
 
 # Recreate the VM user data disk
-hyprpacker vm reset
+ardos-packer vm reset
 
 # Clean the build directory
-hyprpacker clean
+ardos-packer clean
 ```
 
 All build artifacts are stored inside the `./build` directory.
@@ -157,4 +157,4 @@ build/
 
 ## 📜 License
 
-Hyprpacker is distributed under the **MIT License**.
+Ardos Packer is distributed under the **MIT License**.
