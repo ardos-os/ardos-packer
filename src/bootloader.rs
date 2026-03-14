@@ -4,7 +4,7 @@ use std::path::PathBuf;
 const LIMINE_BOOTLOADER_DOWNLOAD_URL: &str =
 	"https://github.com/limine-bootloader/limine/archive/refs/tags/v10.2.1-binary.tar.gz";
 const LIMINE_BOOTLOADER_TARBALL_HASH: &str =
-	"CEEFE62652CE4006A50766A40FDC22A351044269E5705233E9CF254FBBA0DDC0";
+	"F5039B62E2BA7138CF1DC91FE715F5FE03FC4503EBA49441E71894DD7BCBB6F9";
 const BOOTLOADER_TARBALL_PATH: &str = "build/bootloader/limine.tar.gz";
 const BOOTLOADER_UNPACKED_DIR: &str = "build/bootloader/unpacked/";
 const BOOTLOADER_EFI_FILE_HASH: &str =
