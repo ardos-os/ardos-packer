@@ -418,7 +418,7 @@ impl Package {
 				format!("ardos-packer-{}", hash_file(dockerfile_path)?)
 			}
 			DockerSettings::ImageName { name } => name.clone(),
-		})
+		}.to_lowercase())
 	}
 	pub fn build_docker_image_if_needed(&self) -> Result<String, BuildDockerImageError> {
 		match &self.docker {
