@@ -2,7 +2,7 @@ use colored::*;
 use std::path::PathBuf;
 
 const LIMINE_BOOTLOADER_DOWNLOAD_URL: &str =
-	"https://github.com/limine-bootloader/limine/archive/refs/tags/v10.2.1-binary.tar.gz";
+	"https://github.com/limine-bootloader/Limine/archive/refs/tags/v10.2.1-binary.tar.gz";
 const LIMINE_BOOTLOADER_TARBALL_HASH: &str =
 	"F5039B62E2BA7138CF1DC91FE715F5FE03FC4503EBA49441E71894DD7BCBB6F9";
 const BOOTLOADER_TARBALL_PATH: &str = "build/bootloader/limine.tar.gz";
@@ -59,7 +59,7 @@ pub fn download_bootloader() -> Result<PathBuf, BootloaderDownloadError> {
 	let tarball_path = PathBuf::from(BOOTLOADER_TARBALL_PATH);
 	let unpack_dir = PathBuf::from(BOOTLOADER_UNPACKED_DIR);
 	std::fs::create_dir_all(BOOTLOADER_UNPACKED_DIR)?;
-	let bootx_path = unpack_dir.join("limine-10.2.1-binary").join("BOOTX64.EFI");
+	let bootx_path = unpack_dir.join("Limine-10.2.1-binary").join("BOOTX64.EFI");
 
 	// Start progress output
 	println!(
