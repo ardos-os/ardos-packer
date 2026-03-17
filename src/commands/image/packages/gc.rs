@@ -10,6 +10,38 @@ use crate::{
 	size,
 };
 
+#[cfg(unix)]
+fn make_tree_writable(path: &Path) -> std::io::Result<()> {
+	use std::os::unix::fs::PermissionsExt;
+
+	let meta = std::fs::symlink_metadata(path)?;
+	let ft = meta.file_type();
+	if ft.is_symlink() {
+		return Ok(());
+	}
+
+	// Ensure we can traverse and delete as the current user.
+	let mut mode = meta.permissions().mode();
+	if ft.is_dir() {
+		mode |= 0o700;
+		std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+		for entry in std::fs::read_dir(path)? {
+			let entry = entry?;
+			make_tree_writable(&entry.path())?;
+		}
+	} else if ft.is_file() {
+		mode |= 0o600;
+		std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+	}
+
+	Ok(())
+}
+
+#[cfg(not(unix))]
+fn make_tree_writable(_path: &Path) -> std::io::Result<()> {
+	Ok(())
+}
+
 pub fn calculate_folder_size<P>(path: P) -> std::io::Result<u64>
 where
 	P: AsRef<Path>,
@@ -124,6 +156,7 @@ impl Manifest {
 				match if path.is_file() {
 					std::fs::remove_file(&path)
 				} else {
+					make_tree_writable(&path).ok();
 					std::fs::remove_dir_all(&path)
 				} {
 					Ok(()) => {
@@ -153,6 +186,7 @@ impl Manifest {
 				let path = entry.path();
 				if !prepared_referenced.contains(&path) {
 					let metadata = entry.metadata()?;
+					make_tree_writable(&path).ok();
 					match std::fs::remove_dir_all(&path) {
 						Ok(()) => {
 							freed_bytes += metadata.len();
@@ -189,6 +223,7 @@ impl Manifest {
 			let path = entry.path();
 			if !referenced_folders.contains(&path.file_name().unwrap().to_string_lossy().to_string()) {
 				let size_bytes = calculate_folder_size(&path).unwrap_or_default();
+				make_tree_writable(&path).ok();
 				match std::fs::remove_dir_all(&path) {
 					Ok(()) => {
 						freed_bytes += size_bytes;

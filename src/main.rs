@@ -158,6 +158,17 @@ fn main() {
 							error.to_string().red()
 						);
 					}
+					Err(image::AssembleError::SysrootDeps { details }) => {
+						eprintln!();
+						eprintln!(
+							"    {}:\n{}",
+							" 󱁥  Sysroot is missing shared-library dependencies"
+								.bold()
+								.red(),
+							details.red().dimmed()
+						);
+						eprintln!();
+					}
 					Err(image::AssembleError::SquashfsError(e)) => {
 						eprintln!();
 						eprintln!(
@@ -308,6 +319,18 @@ fn main() {
 						"to sysroot".red(),
 						error.to_string().red()
 					);
+					std::process::exit(1);
+				}
+				Err(image::AssembleError::SysrootDeps { details }) => {
+					eprintln!();
+					eprintln!(
+						"    {}:\n{}",
+						" 󱁥  Sysroot is missing shared-library dependencies"
+							.bold()
+							.red(),
+						details.red().dimmed()
+					);
+					eprintln!();
 					std::process::exit(1);
 				}
 				Err(image::AssembleError::SquashfsError(e)) => {
