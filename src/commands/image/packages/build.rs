@@ -411,7 +411,7 @@ impl Package {
 				.unwrap_or_else(|| self.get_package_prepared_dir()),
 		};
 
-		let needs_rebuild = has_file_newer_than(&source_path, timestamp).unwrap_or(true);
+		let needs_rebuild = has_file_newer_than(&source_path, timestamp).map_err(|e| dbg!(e)).unwrap_or(true);
 
 		needs_rebuild
 	}
