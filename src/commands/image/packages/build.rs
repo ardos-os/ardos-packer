@@ -351,9 +351,6 @@ impl Package {
 					tar
 						.unpack(&unpacked_dir)
 						.map_err(BuildError::UnpackBinaryError)?;
-					std::fs::remove_file(unpacked_dir.join(".BUILDINFO")).ok();
-					std::fs::remove_file(unpacked_dir.join(".MTREE")).ok();
-					std::fs::remove_file(unpacked_dir.join(".PKGINFO")).ok();
 					println!(
 						"  {}  {} {}",
 						" ".green().bold(),
