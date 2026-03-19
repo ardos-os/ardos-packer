@@ -341,14 +341,19 @@ impl Package {
 						"  Unpacking".yellow().bold(),
 						path.file_name().unwrap().display().to_string().italic()
 					);
-
+					
+					std::fs::remove_file(unpacked_dir.join(".BUILDINFO")).ok();
+					std::fs::remove_file(unpacked_dir.join(".MTREE")).ok();
+					std::fs::remove_file(unpacked_dir.join(".PKGINFO")).ok();
 					let file = std::fs::File::open(&path).map_err(BuildError::UnpackBinaryError)?;
 					let zstd = zstd::Decoder::new(file).map_err(BuildError::UnpackBinaryError)?;
 					let mut tar = tar::Archive::new(zstd);
 					tar
 						.unpack(&unpacked_dir)
 						.map_err(BuildError::UnpackBinaryError)?;
-
+					std::fs::remove_file(unpacked_dir.join(".BUILDINFO")).ok();
+					std::fs::remove_file(unpacked_dir.join(".MTREE")).ok();
+					std::fs::remove_file(unpacked_dir.join(".PKGINFO")).ok();
 					println!(
 						"  {}  {} {}",
 						" ".green().bold(),
