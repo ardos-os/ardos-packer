@@ -71,11 +71,38 @@ mod tests {
 
 		fs::remove_dir_all(&root).ok();
 	}
+
+	#[test]
+	fn has_file_newer_than_works_for_files() {
+		let root = std::env::temp_dir().join(format!(
+			"ardos-packer-has-file-newer-than-{}-{}",
+			std::process::id(),
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.as_nanos()
+		));
+		fs::create_dir_all(&root).unwrap();
+		let file = root.join("a.txt");
+		fs::write(&file, "v1").unwrap();
+
+		let timestamp = std::time::SystemTime::now();
+		std::thread::sleep(std::time::Duration::from_millis(25));
+		fs::write(&file, "v2").unwrap();
+
+		assert!(has_file_newer_than(&file, timestamp).unwrap());
+		fs::remove_dir_all(&root).ok();
+	}
 }
 
 pub fn has_file_newer_than(dir: &Path, timestamp: SystemTime) -> std::io::Result<bool> {
 	if !dir.exists() {
 		return Ok(false);
+	}
+
+	let metadata = std::fs::symlink_metadata(dir)?;
+	if !metadata.is_dir() {
+		return Ok(metadata.modified().is_ok_and(|m| m > timestamp));
 	}
 
 	for entry in std::fs::read_dir(dir)? {

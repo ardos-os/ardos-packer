@@ -9,7 +9,13 @@ pacman -S --needed --noconfirm sudo # Install sudo
 useradd builduser -m # Create the builduser
 passwd -d builduser # Delete the buildusers password
 printf 'builduser ALL=(ALL) ALL\nDefaults    env_keep += "PKGDEST"\nDefaults    env_keep += "BUILDDIR"\nDefaults    env_keep += "PACMAN"\n' | tee -a /etc/sudoers # Allow the builduser passwordless sudo
-cd /src
+
+# Some PKGBUILDs misbehave and write build outputs into the PKGBUILD folder.
+# To avoid dirtying the bind-mounted `/src` (and causing rebuild loops), build from a private copy.
+mkdir -p /work/src
+cp -a /src/. /work/src/
+chown builduser:builduser /work/src -R
+cd /work/src
 #rm -rf /out/makepkg/pkg
 #rm -rf /out/makepkg/*.pkg.tar.zst
 #rm -rf /out/*.pkg.tar.zst

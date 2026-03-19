@@ -295,13 +295,16 @@ impl Package {
 					.arg("run")
 					.arg("--rm")
 					.arg("-v")
-					.arg(format!("{}:/src", pkg_src_root.canonicalize()?.display()))
+					.arg(format!(
+						"{}:/src:ro",
+						pkg_src_root.canonicalize()?.display()
+					))
 					.arg("-v")
 					.arg(format!("{}:/out", build_dir.canonicalize()?.display()));
 				// map all dependencies to volumes inside /deps/
 				for dep_path in deps_paths {
 					command.arg("-v").arg(format!(
-						"{}:/deps/{}",
+						"{}:/deps/{}:ro",
 						dep_path.canonicalize()?.display(),
 						dep_path.file_name().unwrap().to_string_lossy()
 					));
