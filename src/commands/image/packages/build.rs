@@ -284,6 +284,16 @@ impl Package {
 						.italic(),
 					"unpacked successfully".green().bold()
 				);
+
+				// Mark as successfully built so `needs_rebuild` can skip it next run.
+				std::fs::write(
+					build_dir.join("last_successful_build_time"),
+					std::time::SystemTime::now()
+						.duration_since(std::time::UNIX_EPOCH)
+						.unwrap()
+						.as_millis()
+						.to_string(),
+				)?;
 			}
 			Source::PkgBuildGit { .. } | Source::PkgBuildLocal { .. } => {
 				let docker_image_name = self.build_docker_image_if_needed()?;
