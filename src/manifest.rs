@@ -11,8 +11,18 @@ pub struct Manifest {
 	pub version: String,
 	pub kernel: Kernel,
 	pub initrd: InitrdOptions,
+	#[serde(default)]
+	pub hooks: Hooks,
 	#[serde(rename = "package", default = "Vec::new")]
 	pub packages: Vec<Package>,
+	#[serde(skip, default)]
+	pub manifest_dir: PathBuf,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct Hooks {
+	#[serde(rename = "post-processing")]
+	pub post_processing: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

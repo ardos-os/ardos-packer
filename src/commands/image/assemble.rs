@@ -228,6 +228,8 @@ pub enum AssembleError<'m> {
 	},
 	#[error("Sysroot has missing shared library dependencies:\n{details}")]
 	SysrootDeps { details: String },
+	#[error("Post-processing hook failed ({hook}): {details}")]
+	PostProcessingHook { hook: PathBuf, details: String },
 	#[error("Failed to create squashfs image: {0}")]
 	SquashfsError(#[from] SquashFsError),
 	#[error("io error: {0}")]
@@ -321,6 +323,50 @@ fi
 		return Err(AssembleError::SquashfsError(SquashFsError::Non0ExitCode {
 			exit_code: extract_status.code().unwrap_or(-1),
 		}));
+	}
+
+	if let Some(hook_rel) = manifest.hooks.post_processing.as_ref() {
+		let hook = manifest.manifest_dir.join(hook_rel);
+		if !hook.exists() {
+			return Err(AssembleError::PostProcessingHook {
+				hook,
+				details: "hook script not found".to_string(),
+			});
+		}
+
+		println!(
+			"     {} {}",
+			"󰆧 Post-processing".yellow().bold(),
+			hook_rel.display().to_string().dimmed()
+		);
+
+		let mut hook_cmd = Command::new("fakeroot");
+		hook_cmd
+			.env("SYSROOT", &sysroot_folder)
+			.args([
+				"-i",
+				fakeroot_state.to_string_lossy().as_ref(),
+				"-s",
+				fakeroot_state.to_string_lossy().as_ref(),
+			])
+			.arg("sh")
+			.arg("-e")
+			.arg(&hook);
+
+		let hook_status = prefix_commands::run_command_with_tag(
+			hook_cmd,
+			"       [ fakeroot | post ] ".blue().to_string(),
+		)
+		.map_err(SquashFsError::CommandError)?;
+		if !hook_status.success() {
+			return Err(AssembleError::PostProcessingHook {
+				hook,
+				details: format!(
+					"non-zero exit code: {}",
+					hook_status.code().unwrap_or(-1)
+				),
+			});
+		}
 	}
 
 	verify_sysroot_shared_deps(&sysroot_folder).map_err(|details| AssembleError::SysrootDeps { details })?;

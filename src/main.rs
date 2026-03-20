@@ -10,7 +10,10 @@ mod size;
 mod sources;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use std::{io::ErrorKind, path::PathBuf};
+use std::{
+	io::ErrorKind,
+	path::{Path, PathBuf},
+};
 mod bootloader;
 use crate::{
 	commands::{
@@ -114,7 +117,7 @@ fn main() {
 			std::process::exit(1);
 		}
 	};
-	let manifest = match toml::from_str::<manifest::Manifest>(&manifest) {
+	let mut manifest = match toml::from_str::<manifest::Manifest>(&manifest) {
 		Ok(manifest) => manifest,
 		Err(e) => {
 			eprintln!(
@@ -125,6 +128,11 @@ fn main() {
 			std::process::exit(1);
 		}
 	};
+	manifest.manifest_dir = cli
+		.manifest
+		.parent()
+		.unwrap_or(Path::new("."))
+		.to_path_buf();
 	match cli.command {
 		Commands::Image { command } => match command {
 			ImageCommands::Assemble => {
@@ -166,6 +174,16 @@ fn main() {
 								.bold()
 								.red(),
 							details.red().dimmed()
+						);
+						eprintln!();
+					}
+					Err(image::AssembleError::PostProcessingHook { hook, details }) => {
+						eprintln!();
+						eprintln!(
+							"    {}: {} ({})",
+							" 󰆧  Post-processing hook failed".bold().red(),
+							details.red().dimmed(),
+							hook.display().to_string().dimmed()
 						);
 						eprintln!();
 					}
@@ -329,6 +347,17 @@ fn main() {
 							.bold()
 							.red(),
 						details.red().dimmed()
+					);
+					eprintln!();
+					std::process::exit(1);
+				}
+				Err(image::AssembleError::PostProcessingHook { hook, details }) => {
+					eprintln!();
+					eprintln!(
+						"    {}: {} ({})",
+						" 󰆧  Post-processing hook failed".bold().red(),
+						details.red().dimmed(),
+						hook.display().to_string().dimmed()
 					);
 					eprintln!();
 					std::process::exit(1);
