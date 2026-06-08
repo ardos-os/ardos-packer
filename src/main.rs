@@ -224,6 +224,16 @@ fn main() {
 						);
 						eprintln!();
 					}
+					Err(image::AssembleError::MissingPackageArchive { package }) => {
+						eprintln!();
+						eprintln!(
+							"    {}",
+							format!(" 󱁥  Failed to create image due to a package ({package}) having no output artifacts")
+								.bold()
+								.red(),
+						);
+						eprintln!();
+					}
 				}
 			}
 			ImageCommands::Packages { command } => match command {
@@ -397,6 +407,18 @@ fn main() {
 							.bold()
 							.red(),
 						e.to_string().red().dimmed()
+					);
+					eprintln!();
+					std::process::exit(1);
+				}
+
+				Err(image::AssembleError::MissingPackageArchive { package }) => {
+					eprintln!();
+					eprintln!(
+						"    {}",
+						format!(" 󱁥  Failed to create image due to a package ({package}) having no output artifacts")
+							.bold()
+							.red(),
 					);
 					eprintln!();
 					std::process::exit(1);

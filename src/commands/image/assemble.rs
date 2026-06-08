@@ -228,6 +228,8 @@ pub enum AssembleError<'m> {
 	},
 	#[error("Sysroot has missing shared library dependencies:\n{details}")]
 	SysrootDeps { details: String },
+	#[error("Package {package} has no built archive; run the package build before assembling")]
+	MissingPackageArchive { package: &'m str },
 	#[error("Post-processing hook failed ({hook}): {details}")]
 	PostProcessingHook { hook: PathBuf, details: String },
 	#[error("Failed to create squashfs image: {0}")]
@@ -261,6 +263,11 @@ pub fn assemble<'m>(manifest: &'m Manifest) -> Result<PathBuf, AssembleError<'m>
 	let mut all_archives: Vec<PathBuf> = Vec::new();
 	for pkg in manifest.packages.iter() {
 		let paths = pkg.get_built_archlinux_pkgs_paths().unwrap_or_default();
+		if paths.is_empty() {
+			return Err(AssembleError::MissingPackageArchive {
+				package: &pkg.name,
+			});
+		}
 		all_archives.extend(paths);
 	}
 
