@@ -299,11 +299,15 @@ impl Package {
 				let docker_image_name = self.build_docker_image_if_needed()?;
 				let pkg_src_root = self.get_this_package_src_root();
 				let mut command = Command::new("docker");
+				let container_name =
+					prefix_commands::unique_docker_container_name(&format!("pkg-{}", self.name));
 				let deps_paths = self.get_deps_paths(&manifest);
 				let build_script = include_str!("./build_script.sh");
 				command
 					.arg("run")
 					.arg("--rm")
+					.arg("--name")
+					.arg(&container_name)
 					.arg("-v")
 					.arg(format!(
 						"{}:/src:ro",
@@ -328,6 +332,7 @@ impl Package {
 					.arg("bash")
 					.arg("-c")
 					.arg(build_script);
+				prefix_commands::register_docker_container(&container_name);
 				let exit_status = prefix_commands::run_command_with_tag(
 					command,
 					format!(
@@ -340,6 +345,7 @@ impl Package {
 					),
 				)
 				.map_err(BuildError::Io)?;
+				prefix_commands::unregister_docker_container(&container_name);
 				if !exit_status.success() {
 					return Err(BuildError::Non0ExitCode(exit_status.code().unwrap_or(-1)));
 				}

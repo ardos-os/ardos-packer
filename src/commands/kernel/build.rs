@@ -112,6 +112,7 @@ if [[ -f "${CONFIG}" ]]; then
   done < "${CONFIG}"
 fi
 
+make olddefconfig
 make -j"$(nproc)"
 
 if [[ -f arch/x86/boot/bzImage ]]; then
@@ -264,9 +265,12 @@ pub fn build(manifest: &Manifest) -> Result<KernelBuildResult, KernelBuildError>
 
     println!("{}", "🐧 Building kernel inside container".blue().bold());
     let mut command = Command::new("docker");
+    let container_name = prefix_commands::unique_docker_container_name("kernel-build");
     command
         .arg("run")
         .arg("--rm")
+        .arg("--name")
+        .arg(&container_name)
         .arg("-v")
         .arg(format!("{}:/kernel/downloads:ro", downloads_dir.display()))
         .arg("-v")
@@ -280,10 +284,12 @@ pub fn build(manifest: &Manifest) -> Result<KernelBuildResult, KernelBuildError>
         .arg("-c")
         .arg(BUILD_SCRIPT);
 
+    prefix_commands::register_docker_container(&container_name);
     let status = prefix_commands::run_command_with_tag(
         command,
         "       [ 🐧 kernel-build ] ".blue().to_string(),
     )?;
+    prefix_commands::unregister_docker_container(&container_name);
     if !status.success() {
         return Err(KernelBuildError::DockerRunFailed(status.code()));
     }
