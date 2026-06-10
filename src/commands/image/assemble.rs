@@ -2,7 +2,7 @@ use std::{
 	collections::{HashMap, HashSet},
 	fs::File,
 	io::{Read, Result as IoResult},
-	path::{PathBuf, Path},
+	path::{Path, PathBuf},
 	process::Command,
 };
 
@@ -16,187 +16,190 @@ use crate::{
 };
 // mantém is_elf_file e collect_files_recursive igual
 fn is_elf_file(path: &Path) -> IoResult<bool> {
-    let mut file = File::open(path)?;
-    let mut magic = [0u8; 4];
-    if file.read_exact(&mut magic).is_err() {
-        return Ok(false);
-    }
-    Ok(magic == [0x7f, b'E', b'L', b'F'])
+	let mut file = File::open(path)?;
+	let mut magic = [0u8; 4];
+	if file.read_exact(&mut magic).is_err() {
+		return Ok(false);
+	}
+	Ok(magic == [0x7f, b'E', b'L', b'F'])
 }
 
 fn collect_files_recursive(root: &Path) -> IoResult<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let entries = match std::fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for entry in entries {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let path = entry.path();
-            let ty = match entry.file_type() {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            if ty.is_dir() {
-                stack.push(path);
-            } else if ty.is_file() || ty.is_symlink() {
-                out.push(path);
-            }
-        }
-    }
-    Ok(out)
+	let mut out = Vec::new();
+	let mut stack = vec![root.to_path_buf()];
+	while let Some(dir) = stack.pop() {
+		let entries = match std::fs::read_dir(&dir) {
+			Ok(e) => e,
+			Err(_) => continue,
+		};
+		for entry in entries {
+			let entry = match entry {
+				Ok(e) => e,
+				Err(_) => continue,
+			};
+			let path = entry.path();
+			let ty = match entry.file_type() {
+				Ok(t) => t,
+				Err(_) => continue,
+			};
+			if ty.is_dir() {
+				stack.push(path);
+			} else if ty.is_file() || ty.is_symlink() {
+				out.push(path);
+			}
+		}
+	}
+	Ok(out)
 }
 
 fn parse_readelf_bracket_value(line: &str) -> Option<String> {
-    let start = line.find('[')? + 1;
-    let end = line[start..].find(']')? + start;
-    Some(line[start..end].trim().to_string())
+	let start = line.find('[')? + 1;
+	let end = line[start..].find(']')? + start;
+	Some(line[start..end].trim().to_string())
 }
 
 // lê DT_NEEDED mas considera também RPATH/RUNPATH
 fn readelf_needed(path: &Path) -> IoResult<(Vec<String>, Vec<PathBuf>)> {
-    let output = Command::new("readelf").args(["-d"]).arg(path).output()?;
-    if !output.status.success() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut needed = Vec::new();
-    let mut rpaths = Vec::new();
-    for line in stdout.lines() {
-        if line.contains("(NEEDED)") {
-            if let Some(val) = parse_readelf_bracket_value(line) {
-                needed.push(val);
-            }
-        } else if line.contains("RPATH") || line.contains("RUNPATH") {
-            if let Some(val) = parse_readelf_bracket_value(line) {
-                for p in val.split(':') {
-                    rpaths.push(PathBuf::from(p));
-                }
-            }
-        }
-    }
-    Ok((needed, rpaths))
+	let output = Command::new("readelf").args(["-d"]).arg(path).output()?;
+	if !output.status.success() {
+		return Ok((Vec::new(), Vec::new()));
+	}
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let mut needed = Vec::new();
+	let mut rpaths = Vec::new();
+	for line in stdout.lines() {
+		if line.contains("(NEEDED)") {
+			if let Some(val) = parse_readelf_bracket_value(line) {
+				needed.push(val);
+			}
+		} else if line.contains("RPATH") || line.contains("RUNPATH") {
+			if let Some(val) = parse_readelf_bracket_value(line) {
+				for p in val.split(':') {
+					rpaths.push(PathBuf::from(p));
+				}
+			}
+		}
+	}
+	Ok((needed, rpaths))
 }
 
 fn readelf_interp(path: &Path) -> IoResult<Option<String>> {
-    let output = Command::new("readelf").args(["-l"]).arg(path).output()?;
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(idx) = line.find("Requesting program interpreter:") {
-            if let Some(rest) = line[idx..].splitn(2, ':').nth(1) {
-                let interp = rest
-                    .trim()
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .trim();
-                return Ok(Some(interp.to_string()));
-            }
-        }
-    }
-    Ok(None)
+	let output = Command::new("readelf").args(["-l"]).arg(path).output()?;
+	if !output.status.success() {
+		return Ok(None);
+	}
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	for line in stdout.lines() {
+		if let Some(idx) = line.find("Requesting program interpreter:") {
+			if let Some(rest) = line[idx..].splitn(2, ':').nth(1) {
+				let interp = rest
+					.trim()
+					.trim_start_matches('[')
+					.trim_end_matches(']')
+					.trim();
+				return Ok(Some(interp.to_string()));
+			}
+		}
+	}
+	Ok(None)
 }
 
 fn verify_sysroot_shared_deps(sysroot: &Path) -> Result<(), String> {
-    let files = collect_files_recursive(sysroot).map_err(|e| e.to_string())?;
+	let files = collect_files_recursive(sysroot).map_err(|e| e.to_string())?;
 
-    let mut names_in_sysroot: HashSet<String> = HashSet::new();
-    for path in &files {
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            names_in_sysroot.insert(name.to_string());
-        }
-    }
+	let mut names_in_sysroot: HashSet<String> = HashSet::new();
+	for path in &files {
+		if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+			names_in_sysroot.insert(name.to_string());
+		}
+	}
 
-    let mut missing: HashMap<String, Vec<PathBuf>> = HashMap::new();
-    let mut missing_interpreters: HashMap<String, Vec<PathBuf>> = HashMap::new();
+	let mut missing: HashMap<String, Vec<PathBuf>> = HashMap::new();
+	let mut missing_interpreters: HashMap<String, Vec<PathBuf>> = HashMap::new();
 
-    for path in files {
-        let meta = match std::fs::metadata(&path) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        if !meta.is_file() || !is_elf_file(&path).unwrap_or(false) {
-            continue;
-        }
+	for path in files {
+		let meta = match std::fs::metadata(&path) {
+			Ok(m) => m,
+			Err(_) => continue,
+		};
+		if !meta.is_file() || !is_elf_file(&path).unwrap_or(false) {
+			continue;
+		}
 
-        if let Ok(Some(interp)) = readelf_interp(&path) {
-            if interp.starts_with('/') {
-                let interp_in_sysroot = sysroot.join(interp.trim_start_matches('/'));
-                if !interp_in_sysroot.exists() {
-                    missing_interpreters.entry(interp).or_default().push(path.clone());
-                }
-            }
-        }
+		if let Ok(Some(interp)) = readelf_interp(&path) {
+			if interp.starts_with('/') {
+				let interp_in_sysroot = sysroot.join(interp.trim_start_matches('/'));
+				if !interp_in_sysroot.exists() {
+					missing_interpreters
+						.entry(interp)
+						.or_default()
+						.push(path.clone());
+				}
+			}
+		}
 
-        let (needed, rpaths) = match readelf_needed(&path) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+		let (needed, rpaths) = match readelf_needed(&path) {
+			Ok(v) => v,
+			Err(_) => continue,
+		};
 
-        for lib in needed {
-            if lib == "linux-vdso.so.1" {
-                continue;
-            }
-            let mut found = names_in_sysroot.contains(&lib);
-            if !found {
-                for dir in &rpaths {
-                    let candidate = sysroot.join(dir).join(&lib);
-                    if candidate.exists() {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if !found {
-                missing.entry(lib).or_default().push(path.clone());
-            }
-        }
-    }
+		for lib in needed {
+			if lib == "linux-vdso.so.1" {
+				continue;
+			}
+			let mut found = names_in_sysroot.contains(&lib);
+			if !found {
+				for dir in &rpaths {
+					let candidate = sysroot.join(dir).join(&lib);
+					if candidate.exists() {
+						found = true;
+						break;
+					}
+				}
+			}
+			if !found {
+				missing.entry(lib).or_default().push(path.clone());
+			}
+		}
+	}
 
-    if missing.is_empty() && missing_interpreters.is_empty() {
-        return Ok(());
-    }
+	if missing.is_empty() && missing_interpreters.is_empty() {
+		return Ok(());
+	}
 
-    let mut msg = String::new();
-    if !missing_interpreters.is_empty() {
-        msg.push_str("Missing ELF interpreters (PT_INTERP):\n");
-        let mut keys: Vec<_> = missing_interpreters.keys().cloned().collect();
-        keys.sort();
-        for k in keys {
-            msg.push_str(&format!("  - {k}\n"));
-            let mut deps = missing_interpreters.get(&k).cloned().unwrap_or_default();
-            deps.sort();
-            for p in deps.iter().take(25) {
-                msg.push_str(&format!("      * {}\n", p.display()));
-            }
-        }
-    }
+	let mut msg = String::new();
+	if !missing_interpreters.is_empty() {
+		msg.push_str("Missing ELF interpreters (PT_INTERP):\n");
+		let mut keys: Vec<_> = missing_interpreters.keys().cloned().collect();
+		keys.sort();
+		for k in keys {
+			msg.push_str(&format!("  - {k}\n"));
+			let mut deps = missing_interpreters.get(&k).cloned().unwrap_or_default();
+			deps.sort();
+			for p in deps.iter().take(25) {
+				msg.push_str(&format!("      * {}\n", p.display()));
+			}
+		}
+	}
 
-    if !missing.is_empty() {
-        if !msg.is_empty() {
-            msg.push('\n');
-        }
-        msg.push_str("Missing DT_NEEDED shared libraries:\n");
-        let mut keys: Vec<_> = missing.keys().cloned().collect();
-        keys.sort();
-        for k in keys {
-            msg.push_str(&format!("  - {k}\n"));
-            let mut deps = missing.get(&k).cloned().unwrap_or_default();
-            deps.sort();
-            for p in deps.iter().take(25) {
-                msg.push_str(&format!("      * {}\n", p.display()));
-            }
-        }
-    }
+	if !missing.is_empty() {
+		if !msg.is_empty() {
+			msg.push('\n');
+		}
+		msg.push_str("Missing DT_NEEDED shared libraries:\n");
+		let mut keys: Vec<_> = missing.keys().cloned().collect();
+		keys.sort();
+		for k in keys {
+			msg.push_str(&format!("  - {k}\n"));
+			let mut deps = missing.get(&k).cloned().unwrap_or_default();
+			deps.sort();
+			for p in deps.iter().take(25) {
+				msg.push_str(&format!("      * {}\n", p.display()));
+			}
+		}
+	}
 
-    Err(msg)
+	Err(msg)
 }
 fn get_git_commit_hash() -> Option<String> {
 	let output = Command::new("git")
@@ -264,9 +267,7 @@ pub fn assemble<'m>(manifest: &'m Manifest) -> Result<PathBuf, AssembleError<'m>
 	for pkg in manifest.packages.iter() {
 		let paths = pkg.get_built_archlinux_pkgs_paths().unwrap_or_default();
 		if paths.is_empty() {
-			return Err(AssembleError::MissingPackageArchive {
-				package: &pkg.name,
-			});
+			return Err(AssembleError::MissingPackageArchive { package: &pkg.name });
 		}
 		all_archives.extend(paths);
 	}
@@ -368,15 +369,13 @@ fi
 		if !hook_status.success() {
 			return Err(AssembleError::PostProcessingHook {
 				hook,
-				details: format!(
-					"non-zero exit code: {}",
-					hook_status.code().unwrap_or(-1)
-				),
+				details: format!("non-zero exit code: {}", hook_status.code().unwrap_or(-1)),
 			});
 		}
 	}
 
-	verify_sysroot_shared_deps(&sysroot_folder).map_err(|details| AssembleError::SysrootDeps { details })?;
+	verify_sysroot_shared_deps(&sysroot_folder)
+		.map_err(|details| AssembleError::SysrootDeps { details })?;
 
 	let images_path = PathBuf::from("build/images");
 	std::fs::create_dir_all(images_path)?;

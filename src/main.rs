@@ -228,9 +228,11 @@ fn main() {
 						eprintln!();
 						eprintln!(
 							"    {}",
-							format!(" 󱁥  Failed to create image due to a package ({package}) having no output artifacts")
-								.bold()
-								.red(),
+							format!(
+								" 󱁥  Failed to create image due to a package ({package}) having no output artifacts"
+							)
+							.bold()
+							.red(),
 						);
 						eprintln!();
 					}
@@ -416,9 +418,11 @@ fn main() {
 					eprintln!();
 					eprintln!(
 						"    {}",
-						format!(" 󱁥  Failed to create image due to a package ({package}) having no output artifacts")
-							.bold()
-							.red(),
+						format!(
+							" 󱁥  Failed to create image due to a package ({package}) having no output artifacts"
+						)
+						.bold()
+						.red(),
 					);
 					eprintln!();
 					std::process::exit(1);
@@ -482,7 +486,9 @@ fn main() {
 				}
 			}
 		}
-		Commands::Vm { command: VMCommands::Reset } => {
+		Commands::Vm {
+			command: VMCommands::Reset,
+		} => {
 			match vm::reset_vm() {
 				Ok(p) => p,
 				Err(e) => {

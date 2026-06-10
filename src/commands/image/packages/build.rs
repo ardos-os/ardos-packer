@@ -9,7 +9,10 @@ use colored::Colorize;
 use thiserror::Error;
 
 use crate::{
-	fs_utils::has_file_newer_than, hash::hash_file, manifest::{DockerSettings, InvalidSourceError, Manifest, Package, Source}, prefix_commands
+	fs_utils::has_file_newer_than,
+	hash::hash_file,
+	manifest::{DockerSettings, InvalidSourceError, Manifest, Package, Source},
+	prefix_commands,
 };
 pub struct BuildResult {
 	total_packages: usize,
@@ -360,7 +363,7 @@ impl Package {
 						"  Unpacking".yellow().bold(),
 						path.file_name().unwrap().display().to_string().italic()
 					);
-					
+
 					std::fs::remove_file(unpacked_dir.join(".BUILDINFO")).ok();
 					std::fs::remove_file(unpacked_dir.join(".MTREE")).ok();
 					std::fs::remove_file(unpacked_dir.join(".PKGINFO")).ok();
@@ -427,19 +430,24 @@ impl Package {
 				.unwrap_or_else(|| self.get_package_prepared_dir()),
 		};
 
-		let needs_rebuild = has_file_newer_than(&source_path, timestamp).map_err(|e| dbg!(e)).unwrap_or(true);
+		let needs_rebuild = has_file_newer_than(&source_path, timestamp)
+			.map_err(|e| dbg!(e))
+			.unwrap_or(true);
 
 		needs_rebuild
 	}
 	pub fn get_docker_image_name(&self) -> Result<String, BuildDockerImageError> {
-		Ok(match &self.docker {
-			DockerSettings::DockerfilePath {
-				path: dockerfile_path,
-			} => {
-				format!("ardos-packer-{}", hash_file(dockerfile_path)?)
+		Ok(
+			match &self.docker {
+				DockerSettings::DockerfilePath {
+					path: dockerfile_path,
+				} => {
+					format!("ardos-packer-{}", hash_file(dockerfile_path)?)
+				}
+				DockerSettings::ImageName { name } => name.clone(),
 			}
-			DockerSettings::ImageName { name } => name.clone(),
-		}.to_lowercase())
+			.to_lowercase(),
+		)
 	}
 	pub fn build_docker_image_if_needed(&self) -> Result<String, BuildDockerImageError> {
 		match &self.docker {

@@ -67,7 +67,10 @@ mod tests {
 		let dst_link = dst.join("link.txt");
 		let meta = fs::symlink_metadata(&dst_link).unwrap();
 		assert!(meta.file_type().is_symlink());
-		assert_eq!(fs::read_link(&dst_link).unwrap(), std::path::PathBuf::from("real.txt"));
+		assert_eq!(
+			fs::read_link(&dst_link).unwrap(),
+			std::path::PathBuf::from("real.txt")
+		);
 
 		fs::remove_dir_all(&root).ok();
 	}
