@@ -1,5 +1,8 @@
-use crate::manifest::{Manifest, Package};
 use crate::sources::SourceType;
+use crate::{
+	commands::image::packages::build::{PackageSelectionError, selected_package_names},
+	manifest::{Manifest, Package},
+};
 
 use colored::*;
 use std::sync::Arc;
@@ -63,7 +66,15 @@ impl FetchResult {
 	}
 }
 pub fn fetch(manifest: &Manifest) -> FetchResult {
+	fetch_selected(manifest, None).expect("fetching all packages cannot select an unknown package")
+}
+
+pub fn fetch_selected(
+	manifest: &Manifest,
+	package_name: Option<&str>,
+) -> Result<FetchResult, PackageSelectionError> {
 	Package::create_sources_dir().unwrap();
+	let selected = selected_package_names(manifest, package_name)?;
 
 	const CONCURRENCY_LIMIT: usize = 4;
 
@@ -71,17 +82,18 @@ pub fn fetch(manifest: &Manifest) -> FetchResult {
 		manifest
 			.packages
 			.iter()
+			.filter(|package| selected.contains(&package.name))
 			.filter(|p| !matches!(p.source_type(), Ok(SourceType::LocalFolder { .. })))
 			.filter(|p| p.assert_source_tarball_matches_hash().is_err())
 			.cloned()
 			.collect::<Vec<Package>>(),
 	);
 	if packages.is_empty() {
-		return FetchResult {
+		return Ok(FetchResult {
 			downloaded_packages: 0,
 			errors: 0,
-			total_packages: manifest.packages.len(),
-		};
+			total_packages: selected.len(),
+		});
 	}
 	println!(
 		"{} {} {}",
@@ -149,9 +161,9 @@ pub fn fetch(manifest: &Manifest) -> FetchResult {
 		}
 	}
 
-	FetchResult {
+	Ok(FetchResult {
 		downloaded_packages,
 		errors,
-		total_packages: manifest.packages.len(),
-	}
+		total_packages: selected.len(),
+	})
 }

@@ -100,8 +100,14 @@ enum PackageCommands {
 	GarbageCollect,
 	/// Pre-downloads sources for packages
 	Fetch,
-	/// Builds all packages without building the image
-	Build,
+	/// Builds packages without building the image
+	Build {
+		/// Build only this package
+		package: Option<String>,
+		/// Remove the package's existing build output before building it
+		#[arg(long, requires = "package")]
+		clean: bool,
+	},
 }
 
 fn main() {
@@ -246,12 +252,34 @@ fn main() {
 					result.print();
 					result.exit_if_failure();
 				}
-				PackageCommands::Build => {
+				PackageCommands::Build { package, clean } => {
 					packages::gc_command(&manifest);
-					let fetch_result = packages::fetch(&manifest);
+					if let Some(package) = package.as_deref() {
+						if let Err(error) = packages::validate_package_selection(&manifest, package) {
+							eprintln!("{}: {error}", "ERROR".red().bold());
+							std::process::exit(1);
+						}
+						if clean && let Err(error) = packages::clean_package_build(&manifest, package) {
+							eprintln!("{}: {error}", "ERROR".red().bold());
+							std::process::exit(1);
+						}
+					}
+					let fetch_result = match packages::fetch_selected(&manifest, package.as_deref()) {
+						Ok(result) => result,
+						Err(error) => {
+							eprintln!("{}: {error}", "ERROR".red().bold());
+							std::process::exit(1);
+						}
+					};
 					fetch_result.print();
 					fetch_result.exit_if_failure();
-					let build_result = packages::build(&manifest);
+					let build_result = match packages::build_selected(&manifest, package.as_deref()) {
+						Ok(result) => result,
+						Err(error) => {
+							eprintln!("{}: {error}", "ERROR".red().bold());
+							std::process::exit(1);
+						}
+					};
 					build_result.print();
 					build_result.exit_if_failure();
 				}

@@ -1,6 +1,7 @@
 use std::{
+	collections::HashSet,
 	hash::{DefaultHasher, Hash, Hasher},
-	path::PathBuf,
+	path::{Path, PathBuf},
 	process::Command,
 	time::UNIX_EPOCH,
 };
@@ -48,7 +49,7 @@ impl BuildResult {
 			);
 		} else {
 			println!(
-				"{} {} {}{}{}",
+				"{} {} {} {}{}",
 				"󱌢 All".green(),
 				self.built_packages.to_string().cyan(),
 				if self.built_packages != 1 {
@@ -57,7 +58,12 @@ impl BuildResult {
 					"package"
 				}
 				.green(),
-				" were built successfully!".green(),
+				if self.built_packages != 1 {
+					"were built successfully!"
+				} else {
+					"was built successfully!"
+				}
+				.green(),
 				if self.built_packages < self.total_packages {
 					" (incremental build)"
 				} else {
@@ -75,26 +81,133 @@ impl BuildResult {
 }
 
 pub fn build(manifest: &Manifest) -> BuildResult {
+	build_selected(manifest, None).expect("building all packages cannot select an unknown package")
+}
+
+#[derive(Debug, Error)]
+pub enum PackageSelectionError {
+	#[error("package `{0}` was not found in the manifest")]
+	UnknownPackage(String),
+	#[error("failed to clean package `{package}`: {source}")]
+	Clean {
+		package: String,
+		#[source]
+		source: std::io::Error,
+	},
+}
+
+pub fn validate_package_selection(
+	manifest: &Manifest,
+	package_name: &str,
+) -> Result<(), PackageSelectionError> {
+	if manifest
+		.packages
+		.iter()
+		.any(|package| package.name == package_name)
+	{
+		Ok(())
+	} else {
+		Err(PackageSelectionError::UnknownPackage(
+			package_name.to_owned(),
+		))
+	}
+}
+
+pub(crate) fn selected_package_names(
+	manifest: &Manifest,
+	package_name: Option<&str>,
+) -> Result<HashSet<String>, PackageSelectionError> {
+	let Some(package_name) = package_name else {
+		return Ok(
+			manifest
+				.packages
+				.iter()
+				.map(|package| package.name.clone())
+				.collect(),
+		);
+	};
+	validate_package_selection(manifest, package_name)?;
+
+	let mut selected = HashSet::new();
+	let mut pending = vec![package_name.to_owned()];
+	while let Some(name) = pending.pop() {
+		if !selected.insert(name.clone()) {
+			continue;
+		}
+		let package = manifest
+			.packages
+			.iter()
+			.find(|package| package.name == name)
+			.ok_or_else(|| PackageSelectionError::UnknownPackage(name.clone()))?;
+		pending.extend(package.build_deps.iter().cloned());
+	}
+
+	Ok(selected)
+}
+
+pub fn clean_package_build(
+	manifest: &Manifest,
+	package_name: &str,
+) -> Result<(), PackageSelectionError> {
+	let package = manifest
+		.packages
+		.iter()
+		.find(|package| package.name == package_name)
+		.ok_or_else(|| PackageSelectionError::UnknownPackage(package_name.to_owned()))?;
+	let output_dir = package.get_out_dir();
+
+	if output_dir.exists() {
+		make_tree_writable(&output_dir).map_err(|source| PackageSelectionError::Clean {
+			package: package_name.to_owned(),
+			source,
+		})?;
+		std::fs::remove_dir_all(&output_dir).map_err(|source| PackageSelectionError::Clean {
+			package: package_name.to_owned(),
+			source,
+		})?;
+	}
+
+	println!(
+		"{} {}",
+		"󰃢 Cleaned build output for".green().bold(),
+		package_name.cyan().bold()
+	);
+	Ok(())
+}
+
+pub fn build_selected(
+	manifest: &Manifest,
+	package_name: Option<&str>,
+) -> Result<BuildResult, PackageSelectionError> {
 	println!();
+	let selected = selected_package_names(manifest, package_name)?;
+
 	let packages = manifest
 		.packages
 		.iter()
+		.filter(|package| selected.contains(&package.name))
 		.filter(|p| p.needs_rebuild(&manifest))
 		.cloned()
 		.collect::<Vec<Package>>();
 
 	if packages.is_empty() {
-		return BuildResult {
-			total_packages: manifest.packages.len(),
+		return Ok(BuildResult {
+			total_packages: selected.len(),
 			built_packages: 0,
 			errors: 0,
-		};
+		});
 	}
 	println!(
 		"{} {} {}",
 		"󱌢  Compiling".green().bold(),
 		packages.len().to_string().cyan(),
-		"packages...".green().bold()
+		if packages.len() == 1 {
+			"package..."
+		} else {
+			"packages..."
+		}
+		.green()
+		.bold()
 	);
 
 	let mut built_packages = 0;
@@ -119,11 +232,40 @@ pub fn build(manifest: &Manifest) -> BuildResult {
 			}
 		}
 	}
-	BuildResult {
-		total_packages: manifest.packages.len(),
+	Ok(BuildResult {
+		total_packages: selected.len(),
 		built_packages: built_packages,
 		errors,
+	})
+}
+
+#[cfg(unix)]
+fn make_tree_writable(path: &Path) -> std::io::Result<()> {
+	use std::os::unix::fs::PermissionsExt;
+
+	let metadata = std::fs::symlink_metadata(path)?;
+	if metadata.file_type().is_symlink() {
+		return Ok(());
 	}
+
+	let mut mode = metadata.permissions().mode();
+	if metadata.is_dir() {
+		mode |= 0o700;
+		std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+		for entry in std::fs::read_dir(path)? {
+			make_tree_writable(&entry?.path())?;
+		}
+	} else {
+		mode |= 0o600;
+		std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+	}
+
+	Ok(())
+}
+
+#[cfg(not(unix))]
+fn make_tree_writable(_path: &Path) -> std::io::Result<()> {
+	Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -253,9 +395,9 @@ impl Package {
 
 	pub fn build(&self, manifest: &Manifest) -> Result<(), BuildError> {
 		let build_dir = self.create_out_dir()?;
-		let unpacked_dir = self.create_out_unpacked_dir()?;
 		match &self.source {
 			Source::Binary { .. } => {
+				let unpacked_dir = self.create_out_unpacked_dir()?;
 				let archlinux_pkg_path = self.source_tarball_path()?;
 				// extract arch linux .pkg.tar.zst into the build_dir (streaming)
 				let zstd = zstd::Decoder::new(std::fs::File::open(&archlinux_pkg_path)?)
@@ -356,6 +498,10 @@ impl Package {
 				if files_to_unpack.is_empty() {
 					return Err(BuildError::NoPackageFound);
 				}
+
+				let unpacked_dir = self.get_out_unpacked_dir();
+				std::fs::remove_dir_all(&unpacked_dir).ok();
+				std::fs::create_dir_all(&unpacked_dir)?;
 
 				for path in files_to_unpack {
 					println!(
