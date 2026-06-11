@@ -209,34 +209,27 @@ EOF",
 		"host".into(),
 		"-smp".into(),
 		"4".into(),
-		
 		// Memory Backend moderno exigido para os blob resources (2GB alocados via QOM)
 		"-machine".into(),
 		"type=q35,accel=kvm,memory-backend=pc.ram".into(),
 		"-object".into(),
 		"memory-backend-ram,id=pc.ram,size=2G".into(),
-		
 		"-vga".into(),
 		"none".into(),
-		
 		// Dispositivo gráfico corrigido com suporte a Blobs e Venus (Vulkan)
 		"-device".into(),
 		"virtio-vga-gl,max_outputs=1,hostmem=2G,blob=true,venus=true".into(),
-		
 		// Display SDL apontando diretamente para o render node da tua GPU no Host
 		"-display".into(),
 		"gtk,gl=on".into(),
-		
 		"-device".into(),
 		"virtio-net-pci,netdev=net0".into(),
 		"-netdev".into(),
 		"user,id=net0".into(),
-		
 		"-drive".into(),
 		format!("if=virtio,file={},format=qcow2", system_disk.display()),
 		"-drive".into(),
 		format!("if=virtio,file={},format=qcow2", user_disk.display()),
-		
 		"-drive".into(),
 		format!(
 			"if=pflash,format=raw,readonly=on,file={}",
@@ -247,7 +240,6 @@ EOF",
 			"if=pflash,format=raw,file={}",
 			opts.ovmf_vars_path.display()
 		),
-		
 		"-serial".into(),
 		"stdio".into(),
 		"-boot".into(),

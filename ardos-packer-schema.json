@@ -62,6 +62,13 @@
 							"type": "string"
 						}
 					},
+					"cargo_workspaces": {
+						"type": "array",
+						"description": "Local Cargo workspaces whose member crates override matching crates.io or Git dependencies through Cargo patch tables. Workspace changes mark this package and its transitive dependents as stale.",
+						"items": {
+							"type": "string"
+						}
+					},
 					"version": {
 						"type": "string",
 						"description": "The version of the package."

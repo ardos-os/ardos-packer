@@ -146,12 +146,19 @@ image_name = "archlinux:base-devel" # you can choose to use any image your PKGBU
 # For those cases, you can specify a `build_deps` array that contains the names of previously defined packages
 # in the manifest.toml, and it will install those packages inside the container before starting the
 # build process.
+# cargo_workspaces can additionally expose local Cargo workspaces to a package build.
+# Matching member crates override crates.io or Git dependencies through Cargo patch tables,
+# so consumers can keep their published dependency declarations unchanged.
+# Changes anywhere in a declared workspace make this package stale. That stale state then
+# propagates transitively to packages that list this package in build_deps.
+# Cargo's registry and git caches persist in the package output directory across containers.
 #
 # And for god's sake please don't make it have circular dependencies, otherwise you will cause a stack overflow
 [[package]]
 name = "hyprsettings"
 version = "0.2.0"
 build_deps = ["hyprbus"]
+cargo_workspaces = ["../shift"]
 [package.source]
 mode = "pkgbuildlocal" # Indicates a local PKGBUILD
 path = "your"  # Relative path to the PKGBUILD directory from the manifest.toml file

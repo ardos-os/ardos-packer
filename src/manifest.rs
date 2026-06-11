@@ -49,6 +49,8 @@ pub struct Package {
 	pub docker: DockerSettings,
 	#[serde(default)]
 	pub build_deps: HashSet<String>,
+	#[serde(default)]
+	pub cargo_workspaces: Vec<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

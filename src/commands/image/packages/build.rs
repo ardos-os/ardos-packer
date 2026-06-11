@@ -181,12 +181,13 @@ pub fn build_selected(
 ) -> Result<BuildResult, PackageSelectionError> {
 	println!();
 	let selected = selected_package_names(manifest, package_name)?;
+	let stale = stale_package_names(manifest);
 
 	let packages = manifest
 		.packages
 		.iter()
 		.filter(|package| selected.contains(&package.name))
-		.filter(|p| p.needs_rebuild(&manifest))
+		.filter(|package| stale.contains(&package.name))
 		.cloned()
 		.collect::<Vec<Package>>();
 
@@ -282,6 +283,8 @@ pub enum BuildError {
 	DockerError(#[from] BuildDockerImageError),
 	#[error("no package found in out directory")]
 	NoPackageFound,
+	#[error("failed to inspect Cargo workspace {workspace}: {details}")]
+	CargoWorkspaceMetadata { workspace: PathBuf, details: String },
 }
 #[derive(Debug, Error)]
 pub enum BuildDockerImageError {
@@ -298,6 +301,9 @@ impl Package {
 		let mut hasher = DefaultHasher::new();
 		self.source.hash(&mut hasher);
 		self.docker.hash(&mut hasher);
+		if !self.cargo_workspaces.is_empty() {
+			self.cargo_workspaces.hash(&mut hasher);
+		}
 		let hash = hasher.finish();
 		[
 			"build",
@@ -443,6 +449,11 @@ impl Package {
 			Source::PkgBuildGit { .. } | Source::PkgBuildLocal { .. } => {
 				let docker_image_name = self.build_docker_image_if_needed()?;
 				let pkg_src_root = self.get_this_package_src_root();
+				let cargo_workspaces = if !self.cargo_workspaces.is_empty() {
+					self.cargo_workspace_mounts(manifest, &pkg_src_root)?
+				} else {
+					vec![]
+				};
 				let mut command = Command::new("docker");
 				let container_name =
 					prefix_commands::unique_docker_container_name(&format!("pkg-{}", self.name));
@@ -468,11 +479,38 @@ impl Package {
 						dep_path.file_name().unwrap().to_string_lossy()
 					));
 				}
+				let mut cargo_override_paths = Vec::new();
+				for (index, workspace) in cargo_workspaces.iter().enumerate() {
+					let container_root = format!("/cargo-workspaces/{index}");
+					command.arg("-v").arg(format!(
+						"{}:{container_root}:ro",
+						workspace.root.canonicalize()?.display()
+					));
+					cargo_override_paths.extend(workspace.members.iter().flat_map(|member| {
+						member.patch_sources.iter().map(|source| {
+							format!(
+								"{source}|{}={container_root}/{}",
+								member.name,
+								member.path.display()
+							)
+						})
+					}));
+				}
+				cargo_override_paths.sort();
+				cargo_override_paths.dedup();
 				command
 					.arg("-e")
 					.arg("PKGDEST=/out")
 					.arg("-e")
 					.arg("BUILDDIR=/out/makepkg")
+					.args(if cargo_override_paths.is_empty() {
+						vec![]
+					} else {
+						vec![
+							"-e".to_string(),
+							format!("ARDOS_CARGO_OVERRIDES={}", cargo_override_paths.join("\n")),
+						]
+					})
 					.arg(docker_image_name)
 					.arg("bash")
 					.arg("-c")
@@ -541,15 +579,7 @@ impl Package {
 		Ok(())
 	}
 
-	pub fn needs_rebuild(&self, manifest: &Manifest) -> bool {
-		if manifest
-			.packages
-			.iter()
-			.filter(|p| self.build_deps.contains(&p.name))
-			.any(|p| p.needs_rebuild(manifest))
-		{
-			return true;
-		}
+	fn inputs_changed(&self, manifest: &Manifest) -> bool {
 		let build_dir = self.get_out_dir();
 		let last_successful_build_time_path = build_dir.join("last_successful_build_time");
 
@@ -569,7 +599,7 @@ impl Package {
 			UNIX_EPOCH + std::time::Duration::from_millis(last_successful_build_time as u64);
 
 		let source_path = match &self.source {
-			Source::PkgBuildLocal { path, .. } => path.clone(),
+			Source::PkgBuildLocal { path, .. } => manifest.manifest_dir.join(path),
 			Source::PkgBuildGit { .. } | Source::Binary { .. } => self
 				.source_tarball_path()
 				.ok()
@@ -581,6 +611,73 @@ impl Package {
 			.unwrap_or(true);
 
 		needs_rebuild
+			|| self.cargo_workspaces.iter().any(|workspace| {
+				has_file_newer_than(&manifest.manifest_dir.join(workspace), timestamp)
+					.map_err(|e| dbg!(e))
+					.unwrap_or(true)
+			})
+	}
+
+	fn cargo_workspace_mounts(
+		&self,
+		manifest: &Manifest,
+		consumer_root: &Path,
+	) -> Result<Vec<CargoWorkspaceMount>, BuildError> {
+		let dependency_sources = cargo_dependency_sources(consumer_root).map_err(|details| {
+			BuildError::CargoWorkspaceMetadata {
+				workspace: consumer_root.to_path_buf(),
+				details,
+			}
+		})?;
+		self
+			.cargo_workspaces
+			.iter()
+			.map(|workspace| {
+				let root = manifest.manifest_dir.join(workspace).canonicalize()?;
+				let (metadata, metadata_root) =
+					cargo_metadata(&root).map_err(|details| BuildError::CargoWorkspaceMetadata {
+						workspace: workspace.clone(),
+						details,
+					})?;
+				let packages =
+					metadata["packages"]
+						.as_array()
+						.ok_or_else(|| BuildError::CargoWorkspaceMetadata {
+							workspace: workspace.clone(),
+							details: "Cargo metadata did not contain a packages array".to_string(),
+						})?;
+				let mut members = packages
+					.iter()
+					.filter_map(|package| {
+						Some((
+							package["name"].as_str()?.to_string(),
+							Path::new(package["manifest_path"].as_str()?).parent()?,
+						))
+					})
+					.map(|(name, path)| {
+						path
+							.strip_prefix(&metadata_root)
+							.map(Path::to_path_buf)
+							.map(|path| CargoWorkspaceMember {
+								patch_sources: dependency_sources.get(&name).cloned().unwrap_or_default(),
+								name,
+								path,
+							})
+							.map_err(|_| BuildError::CargoWorkspaceMetadata {
+								workspace: workspace.clone(),
+								details: format!(
+									"workspace member {} is outside {}",
+									path.display(),
+									root.display()
+								),
+							})
+					})
+					.collect::<Result<Vec<_>, _>>()?;
+				members.sort_by(|a, b| a.name.cmp(&b.name));
+				members.dedup_by(|a, b| a.name == b.name);
+				Ok(CargoWorkspaceMount { root, members })
+			})
+			.collect()
 	}
 	pub fn get_docker_image_name(&self) -> Result<String, BuildDockerImageError> {
 		Ok(
@@ -639,5 +736,297 @@ impl Package {
 			}
 			DockerSettings::ImageName { name } => Ok(name.clone()),
 		}
+	}
+}
+
+struct CargoWorkspaceMount {
+	root: PathBuf,
+	members: Vec<CargoWorkspaceMember>,
+}
+
+struct CargoWorkspaceMember {
+	name: String,
+	path: PathBuf,
+	patch_sources: Vec<String>,
+}
+
+fn cargo_dependency_sources(
+	root: &Path,
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+	let (metadata, _) = cargo_metadata(root)?;
+	let mut sources = std::collections::HashMap::<String, Vec<String>>::new();
+	for dependency in metadata["packages"]
+		.as_array()
+		.into_iter()
+		.flatten()
+		.filter_map(|package| package["dependencies"].as_array())
+		.flatten()
+	{
+		let Some(name) = dependency["name"].as_str() else {
+			continue;
+		};
+		let Some(source) = dependency["source"]
+			.as_str()
+			.and_then(normalize_cargo_source)
+		else {
+			continue;
+		};
+		let entry = sources.entry(name.to_string()).or_default();
+		if !entry.contains(&source) {
+			entry.push(source);
+		}
+	}
+	for values in sources.values_mut() {
+		values.sort();
+	}
+	Ok(sources)
+}
+
+fn cargo_metadata(root: &Path) -> Result<(serde_json::Value, PathBuf), String> {
+	let metadata_home = std::env::temp_dir().join(format!(
+		"ardos-packer-cargo-metadata-{}-{}",
+		std::process::id(),
+		std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.map_err(|error| error.to_string())?
+			.as_nanos()
+	));
+	let metadata_root = metadata_home.join("source");
+	copy_cargo_metadata_source(root, &metadata_root)?;
+	let output = Command::new("cargo")
+		.current_dir(&metadata_home)
+		.env("CARGO_HOME", metadata_home.join("cargo-home"))
+		.args([
+			"metadata",
+			"--format-version",
+			"1",
+			"--no-deps",
+			"--manifest-path",
+		])
+		.arg(metadata_root.join("Cargo.toml"))
+		.output()
+		.map_err(|error| error.to_string());
+	let output = output?;
+	if !output.status.success() {
+		std::fs::remove_dir_all(&metadata_home).ok();
+		return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+	}
+
+	let metadata: serde_json::Value =
+		serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+	std::fs::remove_dir_all(&metadata_home).ok();
+	Ok((metadata, metadata_root))
+}
+
+fn copy_cargo_metadata_source(source: &Path, destination: &Path) -> Result<(), String> {
+	std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+	for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
+		let entry = entry.map_err(|error| error.to_string())?;
+		let file_type = entry.file_type().map_err(|error| error.to_string())?;
+		let name = entry.file_name();
+		if matches!(
+			name.to_str(),
+			Some(".git" | ".cargo" | "target" | "Cargo.lock")
+		) {
+			continue;
+		}
+		let target = destination.join(&name);
+		if file_type.is_dir() {
+			copy_cargo_metadata_source(&entry.path(), &target)?;
+		} else if file_type.is_file() {
+			std::fs::copy(entry.path(), target).map_err(|error| error.to_string())?;
+		}
+	}
+	Ok(())
+}
+
+fn normalize_cargo_source(source: &str) -> Option<String> {
+	if source.starts_with("registry+") {
+		return Some("crates-io".to_string());
+	}
+	let git = source.strip_prefix("git+")?;
+	let end = git.find(['?', '#']).unwrap_or(git.len());
+	Some(git[..end].trim_end_matches('/').to_string())
+}
+
+fn stale_package_names(manifest: &Manifest) -> HashSet<String> {
+	let directly_stale = manifest
+		.packages
+		.iter()
+		.filter(|package| package.inputs_changed(manifest))
+		.map(|package| package.name.clone())
+		.collect();
+	propagate_stale_packages(&manifest.packages, directly_stale)
+}
+
+fn propagate_stale_packages(packages: &[Package], mut stale: HashSet<String>) -> HashSet<String> {
+	loop {
+		let newly_stale = packages
+			.iter()
+			.filter(|package| !stale.contains(&package.name))
+			.filter(|package| {
+				package
+					.build_deps
+					.iter()
+					.any(|dependency| stale.contains(dependency))
+			})
+			.map(|package| package.name.clone())
+			.collect::<Vec<_>>();
+		if newly_stale.is_empty() {
+			return stale;
+		}
+		stale.extend(newly_stale);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{cargo_dependency_sources, normalize_cargo_source, propagate_stale_packages};
+	use crate::manifest::{DockerSettings, Hooks, InitrdOptions, Kernel, Manifest, Package, Source};
+	use std::collections::HashSet;
+	use std::path::PathBuf;
+
+	fn package(name: &str, build_deps: &[&str]) -> Package {
+		Package {
+			name: name.to_string(),
+			version: "1".to_string(),
+			author: None,
+			source: Source::PkgBuildLocal {
+				path: name.into(),
+				pick_packages_from_group: None,
+			},
+			docker: DockerSettings::default(),
+			build_deps: build_deps
+				.iter()
+				.map(|dependency| dependency.to_string())
+				.collect(),
+			cargo_workspaces: Vec::new(),
+		}
+	}
+
+	fn repository_root() -> PathBuf {
+		std::env::var_os("ARDOS_REPOSITORY_ROOT")
+			.map(PathBuf::from)
+			.unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
+			.canonicalize()
+			.unwrap()
+	}
+
+	#[test]
+	fn stale_state_propagates_to_transitive_dependents() {
+		let packages = vec![
+			package("library", &[]),
+			package("consumer", &["library"]),
+			package("image-service", &["consumer"]),
+			package("unrelated", &[]),
+		];
+		let stale = propagate_stale_packages(&packages, HashSet::from(["library".to_string()]));
+
+		assert_eq!(
+			stale,
+			HashSet::from([
+				"library".to_string(),
+				"consumer".to_string(),
+				"image-service".to_string(),
+			])
+		);
+	}
+
+	#[test]
+	fn dependency_cycles_do_not_recurse_forever() {
+		let packages = vec![package("a", &["b"]), package("b", &["a"])];
+		let stale = propagate_stale_packages(&packages, HashSet::from(["a".to_string()]));
+
+		assert_eq!(stale, HashSet::from(["a".to_string(), "b".to_string()]));
+	}
+
+	#[test]
+	fn discovers_crates_from_a_local_cargo_workspace() {
+		let mut consumer = package("consumer", &[]);
+		consumer.cargo_workspaces = vec!["packages/shift".into()];
+		let repository_root = repository_root();
+		let manifest = Manifest {
+			version: "test".to_string(),
+			kernel: Kernel {
+				url: String::new(),
+				options: Default::default(),
+			},
+			initrd: InitrdOptions {
+				build_script: PathBuf::new(),
+			},
+			hooks: Hooks::default(),
+			packages: vec![consumer.clone()],
+			manifest_dir: repository_root.clone(),
+		};
+
+		let workspaces = consumer
+			.cargo_workspace_mounts(&manifest, &repository_root.join("packages/tibs"))
+			.unwrap();
+		let member_names = workspaces[0]
+			.members
+			.iter()
+			.map(|member| member.name.as_str())
+			.collect::<HashSet<_>>();
+
+		assert!(member_names.contains("tab-app-framework"));
+		assert!(member_names.contains("tab-client"));
+		assert!(!member_names.contains("tibs"));
+		let app_framework = workspaces[0]
+			.members
+			.iter()
+			.find(|member| member.name == "tab-app-framework")
+			.unwrap();
+		assert_eq!(
+			app_framework.patch_sources,
+			vec!["https://github.com/ardos-os/shift"]
+		);
+	}
+
+	#[test]
+	fn discovers_git_dependency_sources() {
+		let repository_root = repository_root();
+		let sources = cargo_dependency_sources(&repository_root.join("packages/shift")).unwrap();
+
+		assert_eq!(
+			sources["easydrm"],
+			vec!["https://github.com/ardos-os/easydrm"]
+		);
+	}
+
+	#[test]
+	fn overrides_shift_git_dependency_with_local_easydrm() {
+		let mut shift = package("shift", &[]);
+		shift.cargo_workspaces = vec!["packages/easydrm".into()];
+		let repository_root = repository_root();
+		let manifest = Manifest {
+			version: "test".to_string(),
+			kernel: Kernel {
+				url: String::new(),
+				options: Default::default(),
+			},
+			initrd: InitrdOptions {
+				build_script: PathBuf::new(),
+			},
+			hooks: Hooks::default(),
+			packages: vec![shift.clone()],
+			manifest_dir: repository_root.clone(),
+		};
+
+		let workspaces = shift
+			.cargo_workspace_mounts(&manifest, &repository_root.join("packages/shift"))
+			.unwrap();
+		assert_eq!(workspaces[0].members[0].name, "easydrm");
+		assert_eq!(
+			workspaces[0].members[0].patch_sources,
+			vec!["https://github.com/ardos-os/easydrm"]
+		);
+	}
+
+	#[test]
+	fn normalizes_cargo_git_sources_for_patch_tables() {
+		assert_eq!(
+			normalize_cargo_source("git+https://github.com/ardos-os/easydrm?branch=main#0123456789"),
+			Some("https://github.com/ardos-os/easydrm".to_string())
+		);
 	}
 }
