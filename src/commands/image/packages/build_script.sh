@@ -16,7 +16,11 @@ mkdir -p /work/src
 cp -a /src/. /work/src/
 chown builduser:builduser /work/src -R
 cd /work/src
+#rm -rf /out/makepkg/pkg
+#rm -rf /out/makepkg/*.pkg.tar.zst
+#rm -rf /out/*.pkg.tar.zst
 mkdir /out/makepkg -p
+chown builduser:builduser /out/ -R
 
 # makepkg can use $PACMAN; keep it as a path (no spaces) to avoid parsing issues.
 cat >/usr/local/bin/pacman-no-timeout <<'EOF'
