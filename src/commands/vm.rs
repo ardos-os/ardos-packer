@@ -203,58 +203,98 @@ EOF",
 	}
 
 	println!("{}", "🚀 Launching QEMU".blue().bold());
+
+	let spice_socket = format!(
+		"/tmp/ardos-qemu-{}.spice.sock",
+		std::process::id()
+	);
+
+
 	let mut args: Vec<String> = vec![
 		"-enable-kvm".into(),
 		"-cpu".into(),
 		"host".into(),
+
 		"-smp".into(),
 		"4".into(),
-		// Memory Backend moderno exigido para os blob resources (2GB alocados via QOM)
+
 		"-machine".into(),
-		"type=q35,accel=kvm,memory-backend=pc.ram".into(),
+		"type=pc-q35-11.0,accel=kvm,memory-backend=pc.ram,usb=off,vmport=off,smm=on,hpet=off,acpi=on".into(),
+
 		"-object".into(),
 		"memory-backend-ram,id=pc.ram,size=2G".into(),
+
 		"-vga".into(),
 		"none".into(),
-		// Dispositivo gráfico corrigido com suporte a Blobs e Venus (Vulkan)
+
 		"-device".into(),
-		"virtio-vga-gl,max_outputs=1,hostmem=2G,blob=true,venus=true".into(),
-		// Display SDL apontando diretamente para o render node da tua GPU no Host
+		"virtio-vga-gl,max_outputs=1".into(),
+
 		"-display".into(),
-		"gtk,gl=on".into(),
+		"none".into(),
+		// We need to use spice because gtk display has issues with DRM explicit sync
+		"-spice".into(),
+		format!(
+			"unix=on,addr={},disable-ticketing=on,image-compression=off,gl=on",
+			spice_socket
+		),
+
 		"-device".into(),
 		"virtio-net-pci,netdev=net0".into(),
+
 		"-netdev".into(),
 		"user,id=net0".into(),
+
 		"-drive".into(),
 		format!("if=virtio,file={},format=qcow2", system_disk.display()),
+
 		"-drive".into(),
 		format!("if=virtio,file={},format=qcow2", user_disk.display()),
+
 		"-drive".into(),
 		format!(
 			"if=pflash,format=raw,readonly=on,file={}",
 			opts.ovmf_code_path.display()
 		),
+
 		"-drive".into(),
 		format!(
 			"if=pflash,format=raw,file={}",
 			opts.ovmf_vars_path.display()
 		),
+
 		"-serial".into(),
 		"stdio".into(),
+
 		"-boot".into(),
 		"d".into(),
 	];
 
 	args.extend(opts.extra_qemu_args.clone());
 
-	let status = Command::new("qemu-system-x86_64")
+	let mut qemu = Command::new("qemu-system-x86_64")
 		.args(&args)
 		.stdin(Stdio::inherit())
 		.stdout(Stdio::inherit())
 		.stderr(Stdio::inherit())
-		.status()
+		.spawn()
 		.map_err(RunCommandError::Io)?;
+
+	std::thread::sleep(std::time::Duration::from_millis(500));
+
+	let viewer_uri = format!("spice+unix://{}", spice_socket);
+
+	let _viewer = Command::new("remote-viewer")
+		.arg(&viewer_uri)
+		.stdin(Stdio::null())
+		.stdout(Stdio::inherit())
+		.stderr(Stdio::inherit())
+		.spawn()
+		.map_err(RunCommandError::Io)?;
+
+	let status = qemu.wait().map_err(RunCommandError::Io)?;
+
+	let _ = std::fs::remove_file(&spice_socket);
 
 	if !status.success() {
 		return Err(RunCommandError::QemuNonZero(status));
